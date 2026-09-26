@@ -68,16 +68,9 @@ export async function PATCH(
     }
 
     const docRef = db.collection("events").doc(id);
-    const doc = await docRef.get();
-
-    if (!doc.exists) {
-      return NextResponse.json({ error: "Event not found" }, { status: 404 });
-    }
-
     await docRef.update(data);
 
-    const updatedDoc = await docRef.get();
-    return NextResponse.json({ ...updatedDoc.data(), id: updatedDoc.id });
+    return NextResponse.json({ ...data, id });
   } catch (err) {
     console.error("Update event error:", err);
     return NextResponse.json(
@@ -94,11 +87,6 @@ export async function DELETE(
   try {
     const { id } = await params;
     const docRef = db.collection("events").doc(id);
-    const doc = await docRef.get();
-
-    if (!doc.exists) {
-      return NextResponse.json({ error: "Event not found" }, { status: 404 });
-    }
 
     // Delete subcollections first (members, instructors, guests, judges, workshops, hackathons)
     const subcollections = [

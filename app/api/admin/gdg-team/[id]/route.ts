@@ -41,11 +41,6 @@ export async function PATCH(
     const body = await request.json();
 
     const docRef = db.collection(COLLECTION).doc(id);
-    const doc = await docRef.get();
-
-    if (!doc.exists) {
-      return NextResponse.json({ error: "Member not found" }, { status: 404 });
-    }
 
     const allowedFields = [
       "name",
@@ -82,9 +77,8 @@ export async function PATCH(
     data.updatedAt = new Date().toISOString();
 
     await docRef.update(data);
-    const updated = await docRef.get();
 
-    return NextResponse.json({ id: updated.id, ...updated.data() });
+    return NextResponse.json({ id, ...data });
   } catch (error) {
     console.error("Failed to update GDG team member:", error);
     return NextResponse.json(
@@ -104,12 +98,6 @@ export async function DELETE(
   try {
     const { id } = await params;
     const docRef = db.collection(COLLECTION).doc(id);
-    const doc = await docRef.get();
-
-    if (!doc.exists) {
-      return NextResponse.json({ error: "Member not found" }, { status: 404 });
-    }
-
     await docRef.delete();
 
     return NextResponse.json({ message: "Member deleted successfully" });

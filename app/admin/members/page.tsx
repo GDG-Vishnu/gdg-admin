@@ -162,7 +162,7 @@ export default function MembersPage() {
         setCreateError(data.error || "Failed to create member");
       } else {
         setAddOpen(false);
-        fetchMembers();
+        setMembers((prev) => [...prev, data]);
       }
     } catch {
       setCreateError("Network error");
@@ -175,8 +175,14 @@ export default function MembersPage() {
     setMembers((prev) => prev.filter((m) => m.id !== id));
   }
 
-  function handleUpdate() {
-    fetchMembers();
+  function handleUpdate(updatedMember?: any) {
+    if (updatedMember && updatedMember.id) {
+      setMembers((prev) =>
+        prev.map((m) => (m.id === updatedMember.id ? { ...m, ...updatedMember } : m))
+      );
+    } else {
+      fetchMembers();
+    }
   }
 
   // Filter members by search query

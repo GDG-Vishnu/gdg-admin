@@ -9,7 +9,8 @@
     "lint": "eslint",
     "add-admin": "tsx scripts/addAdmin.ts",
     "db:verify": "tsx scripts/updateDb.ts",
-    "seed-user": "tsx scripts/seed-user.ts"
+    "seed-user": "tsx scripts/seed-user.ts",
+    "emulator": "firebase emulators:start --only firestore"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

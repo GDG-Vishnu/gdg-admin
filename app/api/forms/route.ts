@@ -60,9 +60,8 @@ export async function POST(request: Request) {
       updatedAt: now,
     });
 
-    const createdDoc = await docRef.get();
     return NextResponse.json(
-      { id: createdDoc.id, ...createdDoc.data() },
+      { id: docRef.id, title, description: description || "", fields, steps: steps || null, isActive: isActive !== undefined ? isActive : true },
       { status: 201 },
     );
   } catch (error) {

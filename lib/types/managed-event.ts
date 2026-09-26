@@ -74,6 +74,7 @@ export interface RegisteredMember {
   name: string;
   email: string;
   phone: string;
+  branch?: string;
   registrationType: RegistrationType;
   registeredAt: string | null;
   isCheckedIn: boolean;

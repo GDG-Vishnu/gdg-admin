@@ -71,10 +71,9 @@ export async function POST(request: NextRequest) {
     };
 
     const docRef = await db.collection(COLLECTION).add(data);
-    const created = await docRef.get();
 
     return NextResponse.json(
-      { id: docRef.id, ...created.data() },
+      { id: docRef.id, ...data },
       { status: 201 },
     );
   } catch (error) {

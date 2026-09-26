@@ -80,10 +80,9 @@ export async function POST(request: NextRequest) {
     }
 
     const docRef = await db.collection("team_members").add(data);
-    const newDoc = await docRef.get();
 
     return NextResponse.json(
-      { id: newDoc.id, ...newDoc.data() },
+      { id: docRef.id, ...data },
       { status: 201 },
     );
   } catch (err) {

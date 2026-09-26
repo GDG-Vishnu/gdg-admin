@@ -2,17 +2,28 @@
  * GET  /api/admin/users — List all client users
  * Fetches from the `client_users` Firestore collection, ordered by creation date.
  */
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/firebase";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const snapshot = await db
-      .collection("client_users")
-      .orderBy("createdAt", "desc")
-      .get();
+    const { searchParams } = new URL(request.url);
+    const search = (searchParams.get("search") ?? "").trim().toLowerCase();
+    const limitParam = parseInt(searchParams.get("limit") ?? "20", 10);
+    const limit = Math.min(Math.max(isNaN(limitParam) ? 20 : limitParam, 1), 50);
 
-    const users = snapshot.docs.map((doc) => {
+    let query: FirebaseFirestore.Query = db.collection("client_users");
+
+    if (search) {
+      // Fetch up to 50 matching or recent users for client-side search filtering
+      query = query.orderBy("createdAt", "desc").limit(50);
+    } else {
+      query = query.orderBy("createdAt", "desc").limit(limit);
+    }
+
+    const snapshot = await query.get();
+
+    let users = snapshot.docs.map((doc) => {
       const data = doc.data();
       return {
         id: doc.id,
@@ -38,6 +49,15 @@ export async function GET() {
           : data.updatedAt || null,
       };
     });
+
+    if (search) {
+      users = users.filter(
+        (u) =>
+          u.name.toLowerCase().includes(search) ||
+          u.email.toLowerCase().includes(search) ||
+          u.branch.toLowerCase().includes(search)
+      ).slice(0, limit);
+    }
 
     return NextResponse.json(users);
   } catch (error) {

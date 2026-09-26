@@ -45,11 +45,6 @@ export async function PUT(
     const { title, description, fields, steps, isActive } = body;
 
     const docRef = db.collection("forms").doc(id);
-    const doc = await docRef.get();
-
-    if (!doc.exists) {
-      return NextResponse.json({ error: "Form not found" }, { status: 404 });
-    }
 
     const updateData: Record<string, unknown> = {
       updatedAt: FieldValue.serverTimestamp(),
@@ -63,8 +58,7 @@ export async function PUT(
 
     await docRef.update(updateData);
 
-    const updatedDoc = await docRef.get();
-    return NextResponse.json({ id: updatedDoc.id, ...updatedDoc.data() });
+    return NextResponse.json({ id, ...updateData });
   } catch (error) {
     console.error("Error updating form:", error);
     return NextResponse.json(
@@ -81,11 +75,6 @@ export async function DELETE(
   try {
     const { id } = await params;
     const docRef = db.collection("forms").doc(id);
-    const doc = await docRef.get();
-
-    if (!doc.exists) {
-      return NextResponse.json({ error: "Form not found" }, { status: 404 });
-    }
 
     // Cascade delete: remove all responses before deleting the form.
     // Firestore batches support max 500 operations, so we process in

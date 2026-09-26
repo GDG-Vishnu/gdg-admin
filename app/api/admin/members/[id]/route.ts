@@ -42,19 +42,9 @@ export async function PATCH(
     }
 
     const docRef = db.collection("team_members").doc(id);
-    const doc = await docRef.get();
-
-    if (!doc.exists) {
-      return NextResponse.json(
-        { error: "Member not found" },
-        { status: 404 },
-      );
-    }
-
     await docRef.update(data);
 
-    const updatedDoc = await docRef.get();
-    return NextResponse.json({ id: updatedDoc.id, ...updatedDoc.data() });
+    return NextResponse.json({ id, ...data });
   } catch (err: unknown) {
     console.error("Update member error:", err);
     return NextResponse.json(
@@ -71,15 +61,6 @@ export async function DELETE(
   try {
     const { id } = await params;
     const docRef = db.collection("team_members").doc(id);
-    const doc = await docRef.get();
-
-    if (!doc.exists) {
-      return NextResponse.json(
-        { error: "Member not found" },
-        { status: 404 },
-      );
-    }
-
     await docRef.delete();
 
     return NextResponse.json({ message: "Member deleted successfully" });

@@ -310,13 +310,29 @@ export default function RegistrationsPage() {
     }
   }, [eventId]);
 
+  const [paginationMeta, setPaginationMeta] = useState({
+    totalItems: 0,
+    totalPages: 1,
+  });
+
   const fetchRegistrations = useCallback(async () => {
     try {
+      setRegLoading(true);
       const res = await fetch(
-        `/api/admin/managed-events/${eventId}/registrations`,
+        `/api/admin/managed-events/${eventId}/registrations?all=true`,
       );
       const data = await res.json();
-      if (Array.isArray(data)) setRegistrations(data);
+      if (data && Array.isArray(data.data)) {
+        setRegistrations(data.data);
+        if (data.pagination) {
+          setPaginationMeta({
+            totalItems: data.pagination.totalItems,
+            totalPages: data.pagination.totalPages,
+          });
+        }
+      } else if (Array.isArray(data)) {
+        setRegistrations(data);
+      }
     } catch {
       console.error("Failed to load registrations");
     } finally {
@@ -329,18 +345,29 @@ export default function RegistrationsPage() {
     fetchRegistrations();
   }, [fetchEvent, fetchRegistrations]);
 
-  // Eagerly fetch client users on mount (needed for branch stats & add-reg dialog)
+  // On-demand search for client users when typing in manual registration search
   useEffect(() => {
-    if (allClientUsers.length > 0) return;
+    if (userSearchQuery.trim().length < 2) {
+      setAllClientUsers([]);
+      return;
+    }
+    let cancelled = false;
     setLoadingUsers(true);
-    fetch("/api/admin/users")
+    fetch(`/api/admin/users?search=${encodeURIComponent(userSearchQuery.trim())}&limit=10`)
       .then((r) => r.json())
       .then((data) => {
-        if (Array.isArray(data)) setAllClientUsers(data);
+        if (!cancelled && Array.isArray(data)) {
+          setAllClientUsers(data);
+        }
       })
-      .catch(() => console.error("Failed to load users"))
-      .finally(() => setLoadingUsers(false));
-  }, [allClientUsers.length]);
+      .catch(() => console.error("Failed to search users"))
+      .finally(() => {
+        if (!cancelled) setLoadingUsers(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userSearchQuery]);
 
   /* ── Derived state ── */
 
@@ -350,10 +377,7 @@ export default function RegistrationsPage() {
   const filteredUsers =
     userSearchQuery.trim().length >= 2
       ? allClientUsers.filter(
-          (u) =>
-            !registeredEmails.has(u.email.toLowerCase()) &&
-            (u.name.toLowerCase().includes(userSearchQuery.toLowerCase()) ||
-              u.email.toLowerCase().includes(userSearchQuery.toLowerCase())),
+          (u) => !registeredEmails.has(u.email.toLowerCase()),
         )
       : [];
 
@@ -361,7 +385,8 @@ export default function RegistrationsPage() {
     const matchesSearch =
       r.name.toLowerCase().includes(search.toLowerCase()) ||
       r.email.toLowerCase().includes(search.toLowerCase()) ||
-      r.phone.includes(search);
+      r.phone.includes(search) ||
+      (r.branch || "").toLowerCase().includes(search.toLowerCase());
     const matchesType =
       typeFilter === "all" || r.registrationType === typeFilter;
     const matchesCheckIn =
@@ -410,22 +435,18 @@ export default function RegistrationsPage() {
   }, [registrations]);
   const maxTimelineCount = Math.max(...timeline.map((t) => t.count), 1);
 
-  // Branch-wise registration breakdown
+  // Branch-wise registration breakdown derived directly from registration docs
   const branchStats = useMemo(() => {
-    if (registrations.length === 0 || allClientUsers.length === 0) return [];
-    const userBranchMap = new Map<string, string>();
-    allClientUsers.forEach((u) => {
-      if (u.branch) userBranchMap.set(u.id, u.branch);
-    });
+    if (registrations.length === 0) return [];
     const counts: Record<string, number> = {};
     registrations.forEach((r) => {
-      const branch = userBranchMap.get(r.userId) || "Unknown";
+      const branch = r.branch || (r as any).userBranch || "Unknown";
       counts[branch] = (counts[branch] || 0) + 1;
     });
     return Object.entries(counts)
       .map(([branch, count]) => ({ branch, count }))
       .sort((a, b) => b.count - a.count);
-  }, [registrations, allClientUsers]);
+  }, [registrations]);
   const maxBranchCount = Math.max(...branchStats.map((b) => b.count), 1);
 
   // Pagination
@@ -457,11 +478,14 @@ export default function RegistrationsPage() {
             name: selectedUser.name,
             email: selectedUser.email,
             phone: selectedUser.phoneNumber || "",
+            branch: selectedUser.branch || "Unknown",
             registrationType: regForm.registrationType,
           }),
         },
       );
       if (res.ok) {
+        const createdData = await res.json();
+        setRegistrations((prev) => [createdData, ...prev]);
         setShowAddReg(false);
         setSelectedUser(null);
         setUserSearchQuery("");
@@ -472,7 +496,6 @@ export default function RegistrationsPage() {
           phone: "",
           registrationType: "Individual",
         });
-        fetchRegistrations();
       }
     } catch {
       console.error("Failed to add registration");
@@ -483,8 +506,17 @@ export default function RegistrationsPage() {
 
   async function handleToggleCheckIn(regId: string, current: boolean) {
     setTogglingId(regId);
+    const nowIso = new Date().toISOString();
+    // Optimistic React state update — 0 list re-fetches!
+    setRegistrations((prev) =>
+      prev.map((r) =>
+        r.regId === regId
+          ? { ...r, isCheckedIn: !current, checkedInAt: !current ? nowIso : null }
+          : r,
+      ),
+    );
     try {
-      await fetch(
+      const res = await fetch(
         `/api/admin/managed-events/${eventId}/registrations/${regId}`,
         {
           method: "PATCH",
@@ -492,8 +524,16 @@ export default function RegistrationsPage() {
           body: JSON.stringify({ isCheckedIn: !current }),
         },
       );
-      fetchRegistrations();
+      if (!res.ok) throw new Error("Update failed");
     } catch {
+      // Rollback optimistic update on error
+      setRegistrations((prev) =>
+        prev.map((r) =>
+          r.regId === regId
+            ? { ...r, isCheckedIn: current, checkedInAt: current ? r.checkedInAt : null }
+            : r,
+        ),
+      );
       console.error("Failed to toggle check-in");
     } finally {
       setTogglingId(null);
@@ -536,23 +576,29 @@ export default function RegistrationsPage() {
   async function handleBulkCheckIn() {
     const unchecked = filteredRegs.filter((r) => !r.isCheckedIn);
     if (unchecked.length === 0) return;
+    const regIds = unchecked.map((r) => r.regId);
     setBulkChecking(true);
+    const nowIso = new Date().toISOString();
+    // Optimistic React state update
+    setRegistrations((prev) =>
+      prev.map((r) =>
+        regIds.includes(r.regId)
+          ? { ...r, isCheckedIn: true, checkedInAt: nowIso }
+          : r,
+      ),
+    );
     try {
-      await Promise.all(
-        unchecked.map((r) =>
-          fetch(
-            `/api/admin/managed-events/${eventId}/registrations/${r.regId}`,
-            {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ isCheckedIn: true }),
-            },
-          ),
-        ),
+      const res = await fetch(
+        `/api/admin/managed-events/${eventId}/registrations/bulk`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ regIds, isCheckedIn: true }),
+        },
       );
-      fetchRegistrations();
+      if (!res.ok) throw new Error("Bulk update failed");
     } catch {
-      console.error("Failed to bulk check-in");
+      fetchRegistrations(); // Rollback on failure
     } finally {
       setBulkChecking(false);
     }
@@ -561,23 +607,28 @@ export default function RegistrationsPage() {
   async function handleBulkCheckOut() {
     const checked = filteredRegs.filter((r) => r.isCheckedIn);
     if (checked.length === 0) return;
+    const regIds = checked.map((r) => r.regId);
     setBulkCheckingOut(true);
+    // Optimistic React state update
+    setRegistrations((prev) =>
+      prev.map((r) =>
+        regIds.includes(r.regId)
+          ? { ...r, isCheckedIn: false, checkedInAt: null }
+          : r,
+      ),
+    );
     try {
-      await Promise.all(
-        checked.map((r) =>
-          fetch(
-            `/api/admin/managed-events/${eventId}/registrations/${r.regId}`,
-            {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ isCheckedIn: false }),
-            },
-          ),
-        ),
+      const res = await fetch(
+        `/api/admin/managed-events/${eventId}/registrations/bulk`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ regIds, isCheckedIn: false }),
+        },
       );
-      fetchRegistrations();
+      if (!res.ok) throw new Error("Bulk update failed");
     } catch {
-      console.error("Failed to bulk check-out");
+      fetchRegistrations(); // Rollback on failure
     } finally {
       setBulkCheckingOut(false);
     }
@@ -1000,7 +1051,7 @@ export default function RegistrationsPage() {
             <div className="flex flex-wrap items-center gap-2">
               <Select
                 value={typeFilter}
-                onValueChange={(v) =>
+                onValueChange={(v: string) =>
                   setTypeFilter(v as "all" | "Individual" | "Team")
                 }
               >
@@ -1015,7 +1066,7 @@ export default function RegistrationsPage() {
               </Select>
               <Select
                 value={checkInFilter}
-                onValueChange={(v) =>
+                onValueChange={(v: string) =>
                   setCheckInFilter(v as "all" | "checked-in" | "not-checked-in")
                 }
               >
@@ -1267,7 +1318,7 @@ export default function RegistrationsPage() {
                   </span>
                   <Select
                     value={String(pageSize)}
-                    onValueChange={(v) => {
+                    onValueChange={(v: string) => {
                       setPageSize(Number(v));
                       setCurrentPage(1);
                     }}
@@ -1355,7 +1406,7 @@ export default function RegistrationsPage() {
       {/* ── Registration Detail Dialog ── */}
       <Dialog
         open={!!detailReg}
-        onOpenChange={(open) => {
+        onOpenChange={(open: boolean) => {
           if (!open) setDetailReg(null);
         }}
       >
@@ -1740,7 +1791,7 @@ export default function RegistrationsPage() {
       {/* ── Add Registration Dialog ── */}
       <Dialog
         open={showAddReg}
-        onOpenChange={(open) => {
+        onOpenChange={(open: boolean) => {
           setShowAddReg(open);
           if (!open) {
             setSelectedUser(null);
@@ -1873,7 +1924,7 @@ export default function RegistrationsPage() {
                 </Label>
                 <Select
                   value={regForm.registrationType}
-                  onValueChange={(v) =>
+                  onValueChange={(v: string) =>
                     setRegForm((p) => ({
                       ...p,
                       registrationType: v as RegistrationType,

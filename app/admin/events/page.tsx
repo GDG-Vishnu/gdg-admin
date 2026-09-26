@@ -261,8 +261,36 @@ export default function EventsPage() {
         setActionError(data.error || "Update failed");
       } else {
         setEditOpen(false);
+        setEvents((prev) =>
+          prev.map((e) =>
+            e.id === editingId
+              ? {
+                  ...e,
+                  title: editForm.title,
+                  description: editForm.description,
+                  Date: fromDateInput(editForm.date),
+                  Time:
+                    editForm.timeStart && editForm.timeEnd
+                      ? `${editForm.timeStart} - ${editForm.timeEnd}`
+                      : editForm.timeStart || editForm.timeEnd || "",
+                  venue: editForm.venue,
+                  organizer: editForm.organizer,
+                  coOrganizer: editForm.coOrganizer,
+                  status: editForm.status,
+                  imageUrl: editForm.imageUrl,
+                  coverUrl: editForm.coverUrl,
+                  MembersParticipated: Number(editForm.MembersParticipated) || 0,
+                  isDone: editForm.isDone,
+                  rank: Number(editForm.rank) || 0,
+                  keyHighlights: editForm.keyHighlights,
+                  tags: editForm.tags,
+                  Theme: editForm.Theme,
+                  eventGallery: editForm.eventGallery,
+                }
+              : e,
+          ),
+        );
         setEditingId(null);
-        fetchEvents();
       }
     } catch {
       setActionError("Network error");
@@ -279,7 +307,7 @@ export default function EventsPage() {
       if (!res.ok) {
         alert(data.error || "Delete failed");
       } else {
-        fetchEvents();
+        setEvents((prev) => prev.filter((e) => e.id !== eventId));
       }
     } catch {
       alert("Network error");
