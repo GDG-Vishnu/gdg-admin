@@ -31,10 +31,10 @@ export async function createSessionCookie(idToken: string): Promise<string> {
  */
 export async function verifySessionCookie(
   sessionCookie: string,
+  checkRevoked: boolean = true,
 ): Promise<AuthUser | null> {
   try {
-    const decoded = await adminAuth.verifySessionCookie(sessionCookie, true);
-    console.log("verifySessionCookie success. decoded:", decoded);
+    const decoded = await adminAuth.verifySessionCookie(sessionCookie, checkRevoked);
     return {
       uid: decoded.uid,
       email: decoded.email || "",
@@ -43,7 +43,16 @@ export async function verifySessionCookie(
       roleId: decoded.roleId,
       modules: decoded.modules || [],
     };
-  } catch (error) {
+  } catch (error: any) {
+    if (
+      error?.code === "auth/session-cookie-revoked" ||
+      error?.code === "auth/session-cookie-expired" ||
+      error?.code === "auth/argument-error" ||
+      error?.code === "auth/invalid-session-cookie"
+    ) {
+      // Expected auth error when session is invalid, expired, or revoked
+      return null;
+    }
     console.error("verifySessionCookie failed:", error);
     return null;
   }

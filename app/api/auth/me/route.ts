@@ -17,7 +17,9 @@ export async function GET(request: NextRequest) {
     const user = await verifySessionCookie(sessionCookie);
 
     if (!user) {
-      return NextResponse.json({ authenticated: false }, { status: 401 });
+      const response = NextResponse.json({ authenticated: false }, { status: 401 });
+      response.cookies.delete(COOKIE_NAME);
+      return response;
     }
 
     let teamMemberId = null;
