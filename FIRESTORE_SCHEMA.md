@@ -176,41 +176,93 @@ interface GDGTeamMember {
 
 ---
 
-### 4. `team_members` Collection (Legacy)
+### 4. `team_members` Collection (Normalized — migrated 2026-10-17)
 
 **Path:** `team_members/{docId}`
-**Source:** `app/api/admin/members/route.ts`
+**Source:** `app/api/admin/members/`, consumed publicly via gdg-vitb's `src/app/api/teams/list/route.ts`
 
-Legacy collection for the GDG team display (website cards).
+> Previously stored `position`/`designation`/`rank`/`dept_rank`/`bgColor`/`dept_logo`
+> (or a `roles[]` array of the same) as flat, duplicated-per-member strings. Migrated
+> via gdg-vitb's `scripts/migrate-team-schema.ts` into references against the new
+> `departments` and `position_levels` collections below. Backups of the pre-migration
+> data are kept under `gdg-vitb/backups/*.json`.
 
 ```typescript
-interface TeamMemberRole {
-  id: string; // Unique ID for the role entry
-  position: string; // e.g. "Event Management" (Department)
-  designation: string; // e.g. "Lead", "Member"
-  rank: number; // Individual rank within position
-  dept_rank: number; // Department/position group rank
-  dept_logo?: string; // Department icon URL
-  isActive: boolean; // true for current roles, false for past/historical roles
+interface MemberHistoryEntry {
+  deptId: string;
+  deptName: string;       // snapshot for display without an extra join
+  positionId: string;
+  positionName: string;   // snapshot
+  order: number;
+  action: "assigned" | "promoted" | "transferred";
+  effectiveDate: string;  // ISO date, admin-entered (e.g. date of promotion)
+  recordedAt: string;     // ISO timestamp, when this entry was recorded
+  recordedBy?: string;    // admin email/uid, or "migration"
 }
 
 interface TeamMember {
-  id: string; // Firestore document ID, added at read time
-  name: string; // Required
-  imageUrl: string; // Cloudinary URL
-  logo: string; // Team logo/icon URL
-  bgColor: string; // Hex color e.g. "#F8D8D8"
-  linkedinUrl: string; // Full LinkedIn profile URL
-  mail: string; // Email address
-  isAlumni?: boolean; // Whether the member is from a previous batch
-  roles?: TeamMemberRole[]; // Array of roles (replaces root position/designation)
-  
-  // Legacy fields (deprecated in favor of roles array)
-  designation?: string;
-  position?: string;
-  rank?: number;
-  dept_rank?: number;
-  dept_logo?: string;
+  id: string;              // Firestore document ID, added at read time
+  name: string;            // Required
+  imageUrl: string;        // Cloudinary URL
+  logo: string;            // Team logo/icon URL
+  linkedinUrl: string;     // Full LinkedIn profile URL
+  mail: string;            // Email address
+  isAlumni: boolean;
+  deptId: string;          // -> departments/{deptId}
+  positionId: string;      // -> position_levels/{positionId}
+  order: number;           // Order within the department (was `rank`)
+  history: MemberHistoryEntry[]; // Full assignment/promotion/transfer history
+  createdAt: string;       // ISO string
+  updatedAt: string;       // ISO string
+}
+```
+
+**API:**
+- `GET/POST /api/admin/members` — list (joined with dept/position names) / create (requires `deptId` + `positionId`)
+- `PATCH/DELETE /api/admin/members/{id}` — basic profile fields only; delete
+- `POST /api/admin/members/{id}/transfer` — move to another department (+ position, order), recorded in history
+- `POST /api/admin/members/{id}/promote` — move to a higher position level within the same department, recorded in history
+
+---
+
+### 4a. `departments` Collection
+
+**Path:** `departments/{deptId}` (slugified name, e.g. `web-dev`)
+**Source:** `app/api/admin/departments/`
+
+```typescript
+interface Department {
+  id: string;        // Document ID (slug)
+  name: string;       // e.g. "Web Dev"
+  order: number;      // Display order relative to other departments
+  logo: string;        // Department icon URL
+  bgColor: string;     // Hex color e.g. "#C3ECF6"
+  isActive: boolean;
+  createdAt: string;  // ISO string
+  updatedAt: string;  // ISO string
+}
+```
+
+---
+
+### 4b. `position_levels` Collection
+
+**Path:** `position_levels/{positionId}` (slugified name, e.g. `co-lead`)
+**Source:** `app/api/admin/positions/`
+
+Admin-configurable hierarchy used for promotions. `Lead` (1), `Co-Lead` (2), and
+`Associate` (3) are seeded as defaults (`isDefault: true`, protected from deletion);
+admins can add more via the Positions settings page. Lower `level` = higher rank —
+promoting a member requires moving to a strictly lower `level` within the same department.
+
+```typescript
+interface PositionLevel {
+  id: string;         // Document ID (slug)
+  name: string;        // e.g. "Lead"
+  level: number;       // 1 = highest rank
+  isDefault: boolean;  // true for Lead/Co-Lead/Associate — protected from deletion
+  createdAt: string;   // ISO string
+  updatedAt: string;   // ISO string
 }
 ```
 

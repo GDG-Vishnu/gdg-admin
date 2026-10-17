@@ -53,6 +53,16 @@ const menuItems = [
     icon: Users,
   },
   {
+    title: "Departments",
+    url: "/admin/departments",
+    icon: Briefcase,
+  },
+  {
+    title: "Positions",
+    url: "/admin/positions",
+    icon: ShieldEllipsis,
+  },
+  {
     title: "Events",
     url: "/admin/events",
     icon: Calendar,
@@ -167,9 +177,15 @@ export function AppSidebar() {
                   return null;
                 }
                 
-                // For other items, check module map
-                const moduleName = item.url.split("/")[2] || "";
-                
+                // For other items, check module map. Departments/Positions are
+                // members-adjacent settings, so they're gated by the "members"
+                // module rather than requiring a separate RBAC grant.
+                const rawModuleName = item.url.split("/")[2] || "";
+                const moduleName =
+                  rawModuleName === "departments" || rawModuleName === "positions"
+                    ? "members"
+                    : rawModuleName;
+
                 // If userModules is null (loading) or empty, maybe show nothing or wait
                 if (userModules && !userModules.includes(moduleName) && moduleName !== "admins" && moduleName !== "roles") {
                   return null;
